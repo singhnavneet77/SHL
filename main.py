@@ -388,6 +388,44 @@ def generate_response(prompt, retries=3):
 
 
 # ─────────────────────────────────────────────────────────────
+# Parse JSON from LLM output
+# ─────────────────────────────────────────────────────────────
+def extract_json(raw: str) -> dict:
+    """Extract JSON dict from LLM response, handling
+    markdown fences, double-encoding, etc."""
+
+    # Strip markdown code fences if present
+    cleaned = re.sub(
+        r"```(?:json)?\s*", "", raw
+    ).strip()
+    cleaned = cleaned.rstrip("`").strip()
+
+    # Try to find a JSON object in the text
+    json_match = re.search(
+        r"\{.*\}", cleaned, re.DOTALL
+    )
+
+    json_str = (
+        json_match.group(0)
+        if json_match
+        else cleaned
+    )
+
+    data = json.loads(json_str)
+
+    # Handle double-encoded JSON (string instead of dict)
+    if isinstance(data, str):
+        data = json.loads(data)
+
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"Expected dict, got {type(data).__name__}"
+        )
+
+    return data
+
+
+# ─────────────────────────────────────────────────────────────
 # Main Agent
 # ─────────────────────────────────────────────────────────────
 def call_agent(messages):
@@ -412,67 +450,56 @@ def call_agent(messages):
 
     logger.info(f"Raw response: {raw[:500]}")
 
-    json_match = re.search(
-        r"\{.*\}",
-        raw,
-        re.DOTALL
-    )
-
-    json_str = (
-        json_match.group(0)
-        if json_match
-        else raw
-    )
-
     try:
 
-        data = json.loads(json_str)
+        data = extract_json(raw)
+
+        reply = str(
+            data.get("reply", "")
+        ).strip()
+
+        raw_recs = data.get(
+            "recommendations", []
+        )
+
+        end = bool(
+            data.get(
+                "end_of_conversation",
+                False
+            )
+        )
+
+        validated = validate_recommendations(
+            raw_recs
+        )
+
+        return ChatResponse(
+            reply=reply,
+
+            recommendations=[
+                Recommendation(**r)
+                for r in validated
+            ],
+
+            end_of_conversation=end
+        )
 
     except Exception as e:
 
         logger.error(
-            f"JSON parse failed: {e}"
+            f"Response parse failed: {e} "
+            f"| Raw: {raw[:300]}"
         )
 
         return ChatResponse(
             reply=(
                 "Sorry, I had trouble "
-                "processing your request."
+                "processing your request. "
+                "Please try again."
             ),
             recommendations=[],
             end_of_conversation=False
         )
-
-    reply = str(
-        data.get("reply", "")
-    ).strip()
-
-    raw_recs = data.get(
-        "recommendations",
-        []
-    )
-
-    end = bool(
-        data.get(
-            "end_of_conversation",
-            False
-        )
-    )
-
-    validated = validate_recommendations(
-        raw_recs
-    )
-
-    return ChatResponse(
-        reply=reply,
-
-        recommendations=[
-            Recommendation(**r)
-            for r in validated
-        ],
-
-        end_of_conversation=end
-    )
 
 
 # ─────────────────────────────────────────────────────────────
