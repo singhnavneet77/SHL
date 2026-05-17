@@ -13,6 +13,3 @@ venv/
 
 # Streamlit cache
 .streamlit/
-
-# Streamlit app (local only)
-streamlit_app.py
