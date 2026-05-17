@@ -26,16 +26,26 @@ logger.info("Starting SHL Recommender API...")
 load_dotenv()
 
 # ─────────────────────────────────────────────────────────────
-# Groq Client
+# Groq Client (lazy init — don't crash if key missing at startup)
 # ─────────────────────────────────────────────────────────────
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 if not GROQ_API_KEY:
     logger.warning("GROQ_API_KEY not found")
 
-client = Groq(
-    api_key=GROQ_API_KEY
-)
+client = None
+
+def get_groq_client():
+    global client
+    if client is None:
+        api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "GROQ_API_KEY environment variable is not set. "
+                "Set it in Render dashboard → Environment tab."
+            )
+        client = Groq(api_key=api_key)
+    return client
 
 MODEL_NAME = "llama-3.1-8b-instant"
 
@@ -327,7 +337,7 @@ def generate_response(prompt, retries=3):
 
         try:
 
-            completion = client.chat.completions.create(
+            completion = get_groq_client().chat.completions.create(
 
                 model=MODEL_NAME,
 
